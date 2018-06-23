@@ -1,0 +1,94 @@
+Layout of installation
+=======================
+
+MediaREPO allows various kinds of installations with very individual layouts
+on disc. The proposed layout till version 5.1.6 was as the following:
+
+mediarepo51x ---+--- data
+              |
+              +--- pear
+              |
+              +--- mediarepo-5.1.x
+              |
+              +--- www -> mediarepo-5.1.x
+
+'data' contains all document files, the sqlite database (if used), the full text
+data, the log files, and the cached preview images.
+
+'pear' contains all PEAR packages including the four MediaREPO packages mediarepo_Core,
+mediarepo_Lucene, mediarepo_Preview, mediarepo_SQLiteFTS.
+
+'mediarepo-5.1.x' are the sources of mediarepo and 'www' being a link on it.
+
+This layout has disadvantages when updating the source of mediarepo, because
+the directories 'conf' and 'ext' has to be moved from 'mediarepo-5.1.x' to
+'mediarepo-5.1.(x+1)'. 'conf' was also visible over the web unless it was
+protected by an .htaccess file. The .htaccess file has been shipped, but it
+is far better to keep senѕitive data out of the document root in the first
+place.
+
+The new layout mostly retains that structure but uses more soft links to place
+the local data outside of 'mediarepo-5.1.x' which makes updating a lot easier
+and moves the configuration out of the document root.
+As MS Windows does not support soft links, this change will only apply to Linux/Unix
+systems. The new layout is the following:
+
+mediarepo51x ---+--- data --+-- log
+              |           |
+              |           +-- ext
+              |           |
+              |           +-- ...
+              |
+              +--- pear
+              |
+              +--- conf
+              |
+              +--- mediarepo-5.1.x
+              |
+              +--- mediarepo -> mediarepo-5.1.x
+              |
+              +--- www --+-- inc -> ../mediarepo/inc
+                         |
+                         +-- op -> ../mediarepo/op
+                         |
+                         +-- out -> ../mediarepo/out
+                         |
+                         +-- views -> ../mediarepo/views
+                         |
+                         +-- controllers -> ../mediarepo/controllers
+                         |
+                         +-- styles -> ../mediarepo/styles
+                         |
+                         +-- languages -> ../mediarepo/languages
+                         |
+                         +-- webdav -> ../mediarepo/webdav
+                         |
+                         +-- restapi -> ../mediarepo/restapi
+                         |
+                         +-- pdfviewer -> ../mediarepo/pdfviewer
+                         |
+                         +-- index.php -> ../mediarepo/index.php
+                         |
+                         +-- ext -> ../data/ext
+
+In order to convert to this layout you need to do the following in the mediarepo51x
+directory:
+
+ln -s mediarepo-5.1.x mediarepo
+mv www/conf .
+mv www/ext data
+rm www
+mdkir www
+cd www
+ln -s ../mediarepo/inc
+ln -s ../mediarepo/op
+ln -s ../mediarepo/out
+ln -s ../mediarepo/views
+ln -s ../mediarepo/controllers
+ln -s ../mediarepo/styles
+ln -s ../mediarepo/languages
+ln -s ../mediarepo/webdav
+ln -s ../mediarepo/restapi
+ln -s ../mediarepo/pdfviewer
+ln -s ../mediarepo/index.php
+ln -s ../data/ext

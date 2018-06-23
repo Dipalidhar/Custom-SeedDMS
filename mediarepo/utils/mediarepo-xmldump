@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+if [ -z "${mediarepo_HOME}" ]; then
+	echo 'Please set $mediarepo_HOME before running this script'
+	exit 1
+fi
+
+exec php -f "${mediarepo_HOME}/utils/xmldump.php" -- "${@}"

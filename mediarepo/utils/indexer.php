@@ -1,0 +1,161 @@
+<?php
+#require_once("../inc/inc.ClassSettings.php");
+include("../inc/inc.Settings.php");
+include("../inc/inc.Extension.php");
+
+function usage() { /* {{{ */
+	echo "Usage:\n";
+	echo "  mediarepo-indexer [-h] [-v] [--config <file>]\n";
+	echo "\n";
+	echo "Description:\n";
+	echo "  This program recreates the full text index of MediaREPO.\n";
+	echo "\n";
+	echo "Options:\n";
+	echo "  -h, --help: print usage information and exit.\n";
+	echo "  -v, --version: print version and exit.\n";
+	echo "  -c: recreate index.\n";
+	echo "  --config: set alternative config file.\n";
+} /* }}} */
+
+$version = "0.0.2";
+$shortoptions = "hvc";
+$longoptions = array('help', 'version', 'config:');
+if(false === ($options = getopt($shortoptions, $longoptions))) {
+	usage();
+	exit(0);
+}
+
+/* Print help and exit */
+if(isset($options['h']) || isset($options['help'])) {
+	usage();
+	exit(0);
+}
+
+/* Print version and exit */
+if(isset($options['v']) || isset($options['verѕion'])) {
+	echo $version."\n";
+	exit(0);
+}
+
+/* Set alternative config file */
+if(isset($options['config'])) {
+	$settings = new Settings($options['config']);
+} else {
+	$settings = new Settings();
+}
+
+/* recreate index */
+$recreate = false;
+if(isset($options['c'])) {
+	$recreate = true;
+}
+
+if(isset($settings->_extraPath))
+	ini_set('include_path', $settings->_extraPath. PATH_SEPARATOR .ini_get('include_path'));
+
+require_once("MediaREPO/Core.php");
+if($settings->_fullSearchEngine == 'sqlitefts') {
+	$indexconf = array(
+		'Indexer' => 'mediarepo_SQLiteFTS_Indexer',
+		'Search' => 'mediarepo_SQLiteFTS_Search',
+		'IndexedDocument' => 'mediarepo_SQLiteFTS_IndexedDocument'
+	);
+
+	require_once('MediaREPO/SQLiteFTS.php');
+} else {
+	$indexconf = array(
+		'Indexer' => 'mediarepo_Lucene_Indexer',
+		'Search' => 'mediarepo_Lucene_Search',
+		'IndexedDocument' => 'mediarepo_Lucene_IndexedDocument'
+	);
+
+	require_once('MediaREPO/Lucene.php');
+}
+
+function tree($repo, $index, $indexconf, $folder, $indent='') { /* {{{ */
+	global $settings;
+	echo $indent."D ".$folder->getName()."\n";
+	$subfolders = $folder->getSubFolders();
+	foreach($subfolders as $subfolder) {
+		tree($repo, $index, $indexconf, $subfolder, $indent.'  ');
+	}
+	$documents = $folder->getDocuments();
+	foreach($documents as $document) {
+		echo $indent."  ".$document->getId().":".$document->getName()." ";
+		$lucenesearch = new $indexconf['Search']($index);
+		if(!($hit = $lucenesearch->getDocument($document->getId()))) {
+			try {
+#				$index->addDocument(new $indexconf['IndexedDocument']($repo, $document, isset($settings->_converters['fulltext']) ? $settings->_converters['fulltext'] : null, false, $settings->_cmdTimeout));
+				$idoc = new $indexconf['IndexedDocument']($repo, $document, isset($settings->_converters['fulltext']) ? $settings->_converters['fulltext'] : null, false, $settings->_cmdTimeout);
+                                if(isset($GLOBALS['mediarepo_HOOKS']['indexDocument'])) {
+                                	foreach($GLOBALS['mediarepo_HOOKS']['indexDocument'] as $hookObj) {
+                                        	if (method_exists($hookObj, 'preIndexDocument')) {
+                                                	$hookObj->preIndexDocument(null, $document, $idoc);
+                                                }
+                           		}
+                		}
+                                $index->addDocument($idoc);
+				echo " (Document added)\n";
+			} catch(Exception $e) {
+				echo " (Timeout)\n";
+			}
+		} else {
+			try {
+				$created = (int) $hit->getDocument()->getFieldValue('created');
+			} catch (Exception $e) {
+				$created = 0;
+			}
+			$content = $document->getLatestContent();
+			if($created >= $content->getDate()) {
+				echo " (Document unchanged)\n";
+			} else {
+				$index->delete($hit->id);
+				try {
+#					$index->addDocument(new $indexconf['IndexedDocument']($repo, $document, isset($settings->_converters['fulltext']) ? $settings->_converters['fulltext'] : null, false, $settings->_cmdTimeout));
+                                        $idoc = new $indexconf['IndexedDocument']($repo, $document, isset($settings->_converters['fulltext']) ? $settings->_converters['fulltext'] : null, false, $settings->_cmdTimeout);
+						if(isset($GLOBALS['mediarepo_HOOKS']['indexDocument'])) {
+                                                	foreach($GLOBALS['mediarepo_HOOKS']['indexDocument'] as $hookObj) {
+                                                        	if (method_exists($hookObj, 'preIndexDocument')) {
+                                                                	$hookObj->preIndexDocument(null, $document, $idoc);
+                                                                }
+                                                        }
+                                                }
+                                        $index->addDocument($idoc);
+
+					echo " (Document updated)\n";
+				} catch(Exception $e) {
+					echo " (Timeout)\n";
+				}
+			}
+		}
+	}
+} /* }}} */
+
+$db = new mediarepo_Core_DatabaseAccess($settings->_dbDriver, $settings->_dbHostname, $settings->_dbUser, $settings->_dbPass, $settings->_dbDatabase);
+$db->connect() or die ("Could not connect to db-server \"" . $settings->_dbHostname . "\"");
+
+$repo = new mediarepo_Core_REPO($db, $settings->_contentDir.$settings->_contentOffsetDir);
+if(!$repo->checkVersion()) {
+	echo "Database update needed.\n";
+	exit(1);
+}
+
+$repo->setRootFolderID($settings->_rootFolderID);
+
+if($recreate)
+	$index = $indexconf['Indexer']::create($settings->_luceneDir);
+else
+	$index = $indexconf['Indexer']::open($settings->_luceneDir);
+if(!$index) {
+	echo "Could not create index.\n";
+	exit(1);
+}
+
+$indexconf['Indexer']::init($settings->_stopWordsFile);
+
+$folder = $repo->getFolder($settings->_rootFolderID);
+tree($repo, $index, $indexconf, $folder);
+
+$index->commit();
+$index->optimize();
+?>

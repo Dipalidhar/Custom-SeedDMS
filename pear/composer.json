@@ -1,0 +1,6 @@
+{
+    "require": {
+        "sabre/dav": "*",
+        "slim/slim": "2.x"
+    }
+}

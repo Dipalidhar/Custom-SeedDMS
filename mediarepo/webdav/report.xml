@@ -1,0 +1,6 @@
+<card:addressbook-query xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
+    <d:prop>
+        <d:getetag />
+        <card:address-data />
+    </d:prop>
+</card:addressbook-query>
